@@ -42,7 +42,7 @@ func init() {
 
 // ConnetDB 連結資料庫
 func ConnetDB() {
-	clientOptions := options.Client().ApplyURI("mongodb://:27017")
+	clientOptions := options.Client().ApplyURI("mongodb://mongodb:27017")
 	client, err := mongo.Connect(context.TODO(), clientOptions)
 	if err != nil {
 		log.Fatal(err)

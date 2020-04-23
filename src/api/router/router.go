@@ -19,10 +19,7 @@ type Route struct {
 var routes []Route
 
 func init() {
-	register("POST", "/api/addBug", controller.AddBug, nil)
-	register("GET", "/api/getBugList", controller.GetBugList, nil)
-	register("POST", "/api/updateBug", controller.UpdateBug, nil)
-	register("DELETE", "/api/deleteBug", controller.DeleteBug, nil)
+	register("GET", "/api/getRespones", controller.GetRespones, nil)
 }
 
 // NewRouter NewRouter

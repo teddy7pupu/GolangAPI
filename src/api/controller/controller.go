@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
 	"log"
+	"encoding/base64"
 
 	"net/http"
 
@@ -16,17 +18,17 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"github.com/aws/aws-sdk-go/aws"
 )
-
-var database *mongo.Database
 
 // BugDetail bug資料結構
 type BugDetail struct {
-	Time     *string `json:"time" bson:"time"`         // 新增時間
-	Title    *string `json:"title" bson:"title"`       // 標題
-	SubTitle *string `json:"subTitle" bson:"subTitle"` // 副標題
-	Status   *int    `json:"status" bson:"status"`     // 狀態 0: 未處理, 1: 已處理
-	ID       string  `json:"id" bson:"_id"`            // ID
+	Time     *string 	`json:"time" bson:"time"`        	// 新增時間
+	Title    *string 	`json:"title" bson:"title"`      	// 標題
+	SubTitle *string 	`json:"subTitle" bson:"subTitle"` 	// 副標題
+	Image 	 *string 	`json:"image" bson:"image"` 		// 圖片
+	Status   *int    	`json:"status" bson:"status"`     	// 狀態 0: 未處理, 1: 已處理
+	ID       string  	`json:"id" bson:"_id"`            	// ID
 }
 
 // APIResponse api回傳模型
@@ -36,13 +38,23 @@ type APIResponse struct {
 	Data    interface{} `json:"data"`
 }
 
+// 相關變數
+const domainURL = "http://127.0.0.1:3000/api/readImage?image="
+const databaseURL = "mongodb://:27017"
+const databaseName = "bugDB"
+const collectionName = "bug"
+const imageList = "./uploaded/"
+
+var database *mongo.Database
+var collection *mongo.Collection
+
 func init() {
 	ConnetDB()
 }
 
 // ConnetDB 連結資料庫
 func ConnetDB() {
-	clientOptions := options.Client().ApplyURI("mongodb://mongodb:27017")
+	clientOptions := options.Client().ApplyURI(databaseURL)
 	client, err := mongo.Connect(context.TODO(), clientOptions)
 	if err != nil {
 		log.Fatal(err)
@@ -53,16 +65,17 @@ func ConnetDB() {
 		log.Fatal(err)
 	}
 
-	database = client.Database("bugDB")
+	database = client.Database(databaseName)
+	collection = database.Collection(collectionName)
 
-	// fmt.Printf("database 型別是 %T", database)
+	// fmt.Printf("collection 型別是 %T", collection)
 }
 
 // AddBug 新增 bug
 func AddBug(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
-	body, err := ioutil.ReadAll(io.LimitReader(r.Body, 1024)) //io.LimitReader限制大小
+	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -78,7 +91,20 @@ func AddBug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	collection := database.Collection("bug")
+	imageStr := aws.StringValue(bugDetail.Image)
+	dist, err := base64.StdEncoding.DecodeString(imageStr)
+	if err == nil && bugDetail.Image != nil {
+		fileNameStr := bugDetail.ID + ".png"
+		fileAddress := imageList + fileNameStr
+		fileURL := domainURL + fileNameStr
+		f, _ := os.OpenFile(fileAddress, os.O_RDWR|os.O_CREATE, os.ModePerm)
+		defer f.Close()
+		f.Write(dist)
+		bugDetail.Image = aws.String(fileURL)
+	} else {
+		bugDetail.Image = nil
+	}
+
 	collection.InsertOne(context.TODO(), bugDetail)
 
 	response := APIResponse{200, "新增成功", bugDetail}
@@ -119,7 +145,6 @@ func GetBugList(w http.ResponseWriter, r *http.Request) {
 		filters = append(filters, filter)
 	}
 
-	collection := database.Collection("bug")
 	cur, err := collection.Find(context.TODO(), filters)
 	if err != nil {
 		log.Fatal(err)
@@ -144,7 +169,7 @@ func GetBugList(w http.ResponseWriter, r *http.Request) {
 func UpdateBug(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
-	body, err := ioutil.ReadAll(io.LimitReader(r.Body, 1024))
+	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -157,7 +182,6 @@ func UpdateBug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	collection := database.Collection("bug")
 	filter := bson.D{primitive.E{Key: "_id", Value: bugDetail.ID}}
 	updateItem := bson.D{}
 	opts := options.Update().SetUpsert(true)
@@ -186,6 +210,33 @@ func UpdateBug(w http.ResponseWriter, r *http.Request) {
 		update := primitive.E{Key: "time", Value: bugDetail.Time}
 		updateItem = append(updateItem, update)
 	}
+
+	imageStr := aws.StringValue(bugDetail.Image)
+	fileNameStr := bugDetail.ID + ".png"
+	fileAddress := imageList + fileNameStr
+	if bugDetail.Image != nil && bugDetail.Image != aws.String("rm") {
+		// 修改圖片
+		dist, err := base64.StdEncoding.DecodeString(imageStr)
+		if err == nil {
+			fileURL := domainURL + fileNameStr
+			f, _ := os.OpenFile(fileAddress, os.O_RDWR|os.O_CREATE, os.ModePerm)
+			defer f.Close()
+			f.Write(dist)
+			
+			update := primitive.E{Key: "image", Value: fileURL}
+			updateItem = append(updateItem, update)
+		} else {
+			os.Remove(fileAddress)
+			update := primitive.E{Key: "image", Value: nil}
+			updateItem = append(updateItem, update)
+		}
+	} else {
+		// 移除圖片
+		update := primitive.E{Key: "image", Value: nil}
+		updateItem = append(updateItem, update)
+		os.Remove(fileAddress)
+	}
+
 	updateSet := bson.D{primitive.E{Key: "$set", Value: updateItem}}
 	collection.UpdateOne(context.TODO(), filter, updateSet, opts)
 	collection.FindOne(context.TODO(), filter).Decode(&results)
@@ -211,7 +262,6 @@ func DeleteBug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	collection := database.Collection("bug")
 	filter := bson.D{primitive.E{Key: "_id", Value: bugDetail.ID}}
 
 	var results *BugDetail
@@ -225,5 +275,21 @@ func DeleteBug(w http.ResponseWriter, r *http.Request) {
 	collection.DeleteOne(context.TODO(), filter)
 
 	response := APIResponse{200, "資料刪除成功", results}
+	services.ResponseWithJSONgo(w, http.StatusOK, response)
+}
+
+// ReadImage 取得圖片
+func ReadImage(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+	keys := r.URL.Query()
+	imageName := keys.Get("image")
+	imageAddress := imageList + imageName
+	http.ServeFile(w, r, imageAddress)
+}
+
+// 统一错误输出接口
+func errorHandle(errStr string, w http.ResponseWriter) {
+    response := APIResponse{200, errStr, nil}
 	services.ResponseWithJSONgo(w, http.StatusOK, response)
 }

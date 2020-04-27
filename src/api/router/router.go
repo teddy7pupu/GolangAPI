@@ -23,6 +23,7 @@ func init() {
 	register("GET", "/api/getBugList", controller.GetBugList, nil)
 	register("POST", "/api/updateBug", controller.UpdateBug, nil)
 	register("DELETE", "/api/deleteBug", controller.DeleteBug, nil)
+	register("GET", "/api/readImage", controller.ReadImage, nil)
 }
 
 // NewRouter NewRouter

@@ -6,6 +6,7 @@ RUN 	apk add git \
 	&& go get github.com/gorilla/mux  \
 	&& go get go.mongodb.org/mongo-driver/mongo \
 	&& go get go.mongodb.org/mongo-driver/mongo/options \
+	&& go get github.com/aws/aws-sdk-go/aws \
 	&& go build
 EXPOSE 3000
 ENTRYPOINT ./api

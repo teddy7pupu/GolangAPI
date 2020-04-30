@@ -57,7 +57,7 @@ const(
 	reporterKey = "reporter"
 	appVersionKey = "appVersion"
 
-	domainURL = "http://127.0.0.1:3000/api/readImage?image="
+	domainURL = "http://139.162.69.133:3000/api/readImage?image="
 	databaseURL = "mongodb://mongodb:27017"
 	databaseName = "bugDB"
 	collectionName = "bug"
